@@ -1,0 +1,109 @@
+# Workflow name
+name: frontend-cd
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  linting:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check the Repository
+      uses: actions/checkout@v4
+
+    - name: Use Latest NodeJS
+      uses: actions/setup-node@v4
+      with:
+        node-version: 'latest'
+        cache: 'npm'
+        cache-dependency-path: starter/frontend/package-lock.json
+
+    - name: Cache
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+    - name: Install Dependencies
+      working-directory: starter/frontend
+      run: npm ci
+
+    - name: Checkout Run Lint
+      run: cd starter/frontend && npm run lint
+
+  testing:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check the Repository
+      uses: actions/checkout@v4
+
+    - name: Use Latest NodeJS
+      uses: actions/setup-node@v4
+      with:
+        node-version: 'latest'
+        cache: 'npm'
+        cache-dependency-path: starter/frontend/package-lock.json
+
+    - name: Cache
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        
+    - name: Install Dependencies
+      working-directory: starter/frontend
+      run: npm ci
+  
+    - name: Test
+      run: cd starter/frontend && npm run test
+
+  build:
+    needs: [linting, testing]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checking Out the code from Repo
+        uses: actions/checkout@v3
+  
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+  
+      - name: Build, tag, and push docker image to Amazon ECR
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: frontend
+          IMAGE_TAG: ${{ github.sha }}
+          REACT_APP_MOVIE_API_URL: ${{ secrets.REACT_APP_MOVIE_API_URL }}
+        run: |
+          cd starter/frontend
+          docker build --build-arg=REACT_APP_MOVIE_API_URL=$REACT_APP_MOVIE_API_URL -t $REGISTRY/$REPOSITORY:${GITHUB_SHA::7} .
+          docker push $REGISTRY/$REPOSITORY:${GITHUB_SHA::7}
+
+      - name: Setup Authentication against EKS Cluster 
+        run: |
+          aws eks update-kubeconfig --name cluster --region us-east-1
+          kubectl get svc
+          kubectl config view
+          
+      - name: Deploy the image to the cluster
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          cd starter/frontend/k8s
+          kustomize edit set image frontend=${{ steps.login-ecr.outputs.registry }}.dkr.ecr.us-east-1.amazonaws.com/frontend:$IMAGE_TAG
+          kustomize build | kubectl apply -f -
