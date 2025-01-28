@@ -93,5 +93,5 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
           cd starter/backend/k8s
-          kustomize edit set image backend=$REGISTRY/backend:$IMAGE_TAG
+          kustomize edit set image backend=$REGISTRY/$REPOSITORY:$IMAGE_TAG
           kustomize build | kubectl apply -f -
