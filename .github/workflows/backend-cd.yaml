@@ -91,9 +91,9 @@ jobs:
       - name: Deploy the image to the cluster
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          REPOSITORY: frontend
+          REPOSITORY: backend
           IMAGE_TAG: ${{ github.sha }}
         run: |
           cd starter/backend/k8s
-          kustomize edit set image backend=$REGISTRY/$REGISTRY/$REPOSITORY:${IMAGE_TAG::7}
+          kustomize edit set image backend=$REGISTRY/$REPOSITORY:${IMAGE_TAG::7}
           kustomize build | kubectl apply -f -
